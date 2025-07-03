@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/JangkarBumi/PTFO#readme",
   "devDependencies": {
-    "electron": "^23.3.13",
+    "electron": "^28.3.2",
     "electron-packager": "^17.1.1"
   }
 }
