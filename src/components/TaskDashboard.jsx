@@ -17,7 +17,7 @@ import {
   Textarea
 } from '@mantine/core';
 import { IconPlus, IconDownload, IconUpload, IconCheck, IconX } from '@tabler/icons-react';
-import { initDB, getAllTasks, saveAllTasks, clearAllTasks } from '../services/db';
+import { initDB, getAllTasks, saveAllTasks } from '../services/db';
 import TaskItem from './TaskItem';
 
 const TASK_COLORS = [
@@ -47,12 +47,14 @@ function TaskDashboard() {
         const savedTasks = await getAllTasks();
         if (savedTasks.length === 0) {
           // Initialize with default task if DB is empty
+          const now = new Date().toISOString();
           const defaultTasks = [
             {
               id: '1',
               title: 'My First Task',
               completed: false,
               subtasks: [],
+              createdAt: now,
             },
           ];
           await saveAllTasks(defaultTasks);
@@ -86,15 +88,24 @@ function TaskDashboard() {
   };
 
   const handleToggle = async (taskId, parentId = null) => {
+    const now = new Date().toISOString();
     const updatedTasks = tasks.map((task) => {
       if (parentId) {
         // Toggle subtask
         if (task.id === parentId) {
           return {
             ...task,
-            subtasks: task.subtasks.map((st) =>
-              st.id === taskId ? { ...st, completed: !st.completed } : st
-            ),
+            subtasks: task.subtasks.map((st) => {
+              if (st.id === taskId) {
+                const newCompleted = !st.completed;
+                return {
+                  ...st,
+                  completed: newCompleted,
+                  completedAt: newCompleted ? now : null,
+                };
+              }
+              return st;
+            }),
           };
         }
         return task;
@@ -105,9 +116,11 @@ function TaskDashboard() {
           return {
             ...task,
             completed: newCompleted,
+            completedAt: newCompleted ? now : null,
             subtasks: task.subtasks.map((st) => ({
               ...st,
               completed: newCompleted,
+              completedAt: newCompleted ? now : null,
             })),
           };
         }
@@ -119,11 +132,13 @@ function TaskDashboard() {
 
   const handleAddTask = async () => {
     if (taskTitle.trim()) {
+      const now = new Date().toISOString();
       const newTask = {
         id: Date.now().toString(),
         title: taskTitle.trim(),
         completed: false,
         subtasks: [],
+        createdAt: now,
       };
       const updatedTasks = [...tasks, newTask];
       await saveTasksToDB(updatedTasks);
@@ -157,12 +172,14 @@ function TaskDashboard() {
 
   const handleAddSubtask = async (parentId, subtaskTitle) => {
     if (subtaskTitle.trim()) {
+      const now = new Date().toISOString();
       const updatedTasks = tasks.map((task) => {
         if (task.id === parentId) {
           const newSubtask = {
             id: `${parentId}-${Date.now()}`,
             title: subtaskTitle.trim(),
             completed: false,
+            createdAt: now,
           };
           return {
             ...task,
@@ -292,11 +309,8 @@ function TaskDashboard() {
         <Group justify="space-between" align="flex-start">
           <div>
             <Title order={1} mb="md" c="white" fw={800}>
-              🎮 Gamified Task Dashboard
+              🎮 Task Dashboard
             </Title>
-            <Text c="gray.4" size="lg" fw={500}>
-              Track your progress and level up your productivity
-            </Text>
           </div>
           <Group gap="sm">
             <FileButton onChange={handleFileImport} accept="application/json">
