@@ -16,7 +16,23 @@ import {
   FileButton,
   Textarea
 } from '@mantine/core';
-import { IconPlus, IconDownload, IconUpload, IconCheck, IconX } from '@tabler/icons-react';
+import { IconPlus, IconDownload, IconUpload, IconCheck, IconX, IconGripVertical } from '@tabler/icons-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { initDB, getAllTasks, saveAllTasks } from '../services/db';
 import TaskItem from './TaskItem';
 
@@ -27,6 +43,100 @@ const TASK_COLORS = [
   { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', ring: '#10b981' },
   { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', ring: '#f59e0b' },
 ];
+
+const getProgressColor = (progress) => {
+  if (progress < 30) return '#ef4444';
+  if (progress < 60) return '#f59e0b';
+  if (progress < 90) return '#3b82f6';
+  return '#10b981';
+};
+
+function SortableTaskItem({ task, taskColor, progress, completedSubtasks, totalSubtasks, onToggle, onEdit, onDelete, onAddSubtask, onEditSubtask, onDeleteSubtask }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    background: 'rgba(255, 255, 255, 0.08)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    backdropFilter: 'blur(20px)',
+    cursor: isDragging ? 'grabbing' : 'grab',
+  };
+
+  return (
+    <Paper
+      ref={setNodeRef}
+      style={style}
+      p="lg"
+      radius="lg"
+      mb="lg"
+    >
+      <Grid gutter="lg" align="center">
+        <Grid.Col span={{ base: 12, sm: 1 }}>
+          <div
+            {...attributes}
+            {...listeners}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'grab',
+              color: 'rgba(255, 255, 255, 0.6)',
+              padding: '8px',
+            }}
+          >
+            <IconGripVertical size={24} />
+          </div>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 2 }}>
+          <Stack align="center" gap="sm">
+            <RingProgress
+              size={140}
+              thickness={12}
+              sections={[{ value: progress, color: getProgressColor(progress) }]}
+              label={
+                <Text ta="center" fw={700} size="lg" c="white">
+                  {Math.round(progress)}%
+                </Text>
+              }
+            />
+            <Badge
+              size="md"
+              variant="light"
+              style={{
+                background: taskColor.gradient,
+                color: 'white',
+                border: 'none',
+              }}
+            >
+              {completedSubtasks}/{totalSubtasks} done
+            </Badge>
+          </Stack>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 9 }}>
+          <TaskItem
+            task={task}
+            onToggle={onToggle}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onAddSubtask={onAddSubtask}
+            onEditSubtask={onEditSubtask}
+            onDeleteSubtask={onDeleteSubtask}
+            level={0}
+          />
+        </Grid.Col>
+      </Grid>
+    </Paper>
+  );
+}
 
 function TaskDashboard() {
   const [tasks, setTasks] = useState([]);
@@ -55,12 +165,27 @@ function TaskDashboard() {
               completed: false,
               subtasks: [],
               createdAt: now,
+              order: 0,
             },
           ];
           await saveAllTasks(defaultTasks);
           setTasks(defaultTasks);
         } else {
-          setTasks(savedTasks);
+          // Ensure all tasks have an order field (migration for existing tasks)
+          const tasksWithOrder = savedTasks.map((task, index) => ({
+            ...task,
+            order: task.order !== undefined ? task.order : index,
+          }));
+
+          // Sort tasks by order to ensure correct display order
+          const sortedTasks = tasksWithOrder.sort((a, b) => a.order - b.order);
+
+          // If order was missing, save the updated tasks with order
+          if (savedTasks.some(task => task.order === undefined)) {
+            await saveAllTasks(sortedTasks);
+          }
+
+          setTasks(sortedTasks);
         }
       } catch (error) {
         console.error('Failed to load tasks:', error);
@@ -133,12 +258,14 @@ function TaskDashboard() {
   const handleAddTask = async () => {
     if (taskTitle.trim()) {
       const now = new Date().toISOString();
+      const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : -1;
       const newTask = {
         id: Date.now().toString(),
         title: taskTitle.trim(),
         completed: false,
         subtasks: [],
         createdAt: now,
+        order: maxOrder + 1,
       };
       const updatedTasks = [...tasks, newTask];
       await saveTasksToDB(updatedTasks);
@@ -211,7 +338,14 @@ function TaskDashboard() {
 
   const handleDeleteTask = async (taskId) => {
     const updatedTasks = tasks.filter((task) => task.id !== taskId);
-    await saveTasksToDB(updatedTasks);
+
+    // Reorder remaining tasks to have sequential order values
+    const reorderedTasks = updatedTasks.map((task, index) => ({
+      ...task,
+      order: index,
+    }));
+
+    await saveTasksToDB(reorderedTasks);
     showNotification('Task deleted successfully');
   };
 
@@ -258,8 +392,14 @@ function TaskDashboard() {
         return;
       }
 
-      await saveAllTasks(importedTasks);
-      setTasks(importedTasks);
+      // Ensure all imported tasks have an order field based on their array position
+      const tasksWithOrder = importedTasks.map((task, index) => ({
+        ...task,
+        order: task.order !== undefined ? task.order : index,
+      }));
+
+      await saveAllTasks(tasksWithOrder);
+      setTasks(tasksWithOrder.sort((a, b) => a.order - b.order));
       setImportData('');
       setImportModalOpened(false);
       showNotification('Tasks imported successfully');
@@ -279,8 +419,14 @@ function TaskDashboard() {
         return;
       }
 
-      await saveAllTasks(importedTasks);
-      setTasks(importedTasks);
+      // Ensure all imported tasks have an order field based on their array position
+      const tasksWithOrder = importedTasks.map((task, index) => ({
+        ...task,
+        order: task.order !== undefined ? task.order : index,
+      }));
+
+      await saveAllTasks(tasksWithOrder);
+      setTasks(tasksWithOrder.sort((a, b) => a.order - b.order));
       showNotification('Tasks imported successfully');
     } catch (error) {
       console.error('Import error:', error);
@@ -296,11 +442,30 @@ function TaskDashboard() {
     return (completed / task.subtasks.length) * 100;
   };
 
-  const getProgressColor = (progress) => {
-    if (progress < 30) return '#ef4444';
-    if (progress < 60) return '#f59e0b';
-    if (progress < 90) return '#3b82f6';
-    return '#10b981';
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = tasks.findIndex((task) => task.id === active.id);
+      const newIndex = tasks.findIndex((task) => task.id === over.id);
+
+      const reorderedTasks = arrayMove(tasks, oldIndex, newIndex);
+
+      // Update order field for all tasks to match their new positions
+      const tasksWithUpdatedOrder = reorderedTasks.map((task, index) => ({
+        ...task,
+        order: index,
+      }));
+
+      await saveTasksToDB(tasksWithUpdatedOrder);
+    }
   };
 
   return (
@@ -366,67 +531,42 @@ function TaskDashboard() {
             No tasks yet. Add your first task to get started!
           </Text>
         ) : (
-          <Stack gap="lg">
-            {tasks.map((task, index) => {
-            const progress = getTaskProgress(task);
-            const taskColor = TASK_COLORS[index % TASK_COLORS.length];
-            const completedSubtasks = task.subtasks?.filter((st) => st.completed).length || 0;
-            const totalSubtasks = task.subtasks?.length || 0;
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={tasks.map((task) => task.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <Stack gap="lg">
+                {tasks.map((task, index) => {
+                  const progress = getTaskProgress(task);
+                  const taskColor = TASK_COLORS[index % TASK_COLORS.length];
+                  const completedSubtasks = task.subtasks?.filter((st) => st.completed).length || 0;
+                  const totalSubtasks = task.subtasks?.length || 0;
 
-            return (
-              <Paper
-                key={task.id}
-                p="lg"
-                radius="lg"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  backdropFilter: 'blur(20px)',
-                }}
-              >
-                <Grid gutter="lg" align="center">
-                  <Grid.Col span={{ base: 12, sm: 3 }}>
-                    <Stack align="center" gap="sm">
-                      <RingProgress
-                        size={140}
-                        thickness={12}
-                        sections={[{ value: progress, color: getProgressColor(progress) }]}
-                        label={
-                          <Text ta="center" fw={700} size="lg" c="white">
-                            {Math.round(progress)}%
-                          </Text>
-                        }
-                      />
-                      <Badge
-                        size="md"
-                        variant="light"
-                        style={{
-                          background: taskColor.gradient,
-                          color: 'white',
-                          border: 'none',
-                        }}
-                      >
-                        {completedSubtasks}/{totalSubtasks} done
-                      </Badge>
-                    </Stack>
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, sm: 9 }}>
-                    <TaskItem
+                  return (
+                    <SortableTaskItem
+                      key={task.id}
                       task={task}
+                      taskColor={taskColor}
+                      progress={progress}
+                      completedSubtasks={completedSubtasks}
+                      totalSubtasks={totalSubtasks}
                       onToggle={handleToggle}
                       onEdit={handleEditTask}
                       onDelete={handleDeleteTask}
                       onAddSubtask={handleAddSubtask}
                       onEditSubtask={handleEditSubtask}
                       onDeleteSubtask={handleDeleteSubtask}
-                      level={0}
                     />
-                  </Grid.Col>
-                </Grid>
-              </Paper>
-            );
-            })}
-          </Stack>
+                  );
+                })}
+              </Stack>
+            </SortableContext>
+          </DndContext>
         )}
       </Stack>
 
