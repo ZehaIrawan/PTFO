@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Container,
   Title,
@@ -12,9 +12,12 @@ import {
   Button,
   Modal,
   TextInput,
-  ActionIcon
+  ActionIcon,
+  FileButton,
+  Textarea
 } from '@mantine/core';
-import { IconPlus, IconEdit } from '@tabler/icons-react';
+import { IconPlus, IconDownload, IconUpload, IconCheck, IconX } from '@tabler/icons-react';
+import { initDB, getAllTasks, saveAllTasks, clearAllTasks } from '../services/db';
 import TaskItem from './TaskItem';
 
 const TASK_COLORS = [
@@ -26,81 +29,95 @@ const TASK_COLORS = [
 ];
 
 function TaskDashboard() {
-  const [tasks, setTasks] = useState([
-    {
-      id: '1',
-      title: 'Project Setup',
-      completed: false,
-      subtasks: [
-        { id: '1-1', title: 'Initialize repository', completed: true },
-        { id: '1-2', title: 'Set up development environment', completed: true },
-        { id: '1-3', title: 'Configure CI/CD pipeline', completed: false },
-        { id: '1-4', title: 'Write documentation', completed: false },
-      ],
-    },
-    {
-      id: '2',
-      title: 'Feature Development',
-      completed: false,
-      subtasks: [
-        { id: '2-1', title: 'Design user interface', completed: true },
-        { id: '2-2', title: 'Implement core functionality', completed: false },
-        { id: '2-3', title: 'Add unit tests', completed: false },
-        { id: '2-4', title: 'Performance optimization', completed: false },
-      ],
-    },
-    {
-      id: '3',
-      title: 'Testing & Deployment',
-      completed: false,
-      subtasks: [
-        { id: '3-1', title: 'Run integration tests', completed: false },
-        { id: '3-2', title: 'Fix bugs', completed: false },
-        { id: '3-3', title: 'Deploy to staging', completed: false },
-        { id: '3-4', title: 'Deploy to production', completed: false },
-      ],
-    },
-  ]);
-
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [addTaskModalOpened, setAddTaskModalOpened] = useState(false);
   const [editTaskModalOpened, setEditTaskModalOpened] = useState(false);
+  const [importModalOpened, setImportModalOpened] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskTitle, setTaskTitle] = useState('');
+  const [importData, setImportData] = useState('');
+  const [notification, setNotification] = useState(null);
 
-  const handleToggle = (taskId, parentId = null) => {
-    setTasks((prevTasks) => {
-      return prevTasks.map((task) => {
-        if (parentId) {
-          // Toggle subtask
-          if (task.id === parentId) {
-            return {
-              ...task,
-              subtasks: task.subtasks.map((st) =>
-                st.id === taskId ? { ...st, completed: !st.completed } : st
-              ),
-            };
-          }
-          return task;
+  // Initialize DB and load tasks
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        await initDB();
+        const savedTasks = await getAllTasks();
+        if (savedTasks.length === 0) {
+          // Initialize with default task if DB is empty
+          const defaultTasks = [
+            {
+              id: '1',
+              title: 'My First Task',
+              completed: false,
+              subtasks: [],
+            },
+          ];
+          await saveAllTasks(defaultTasks);
+          setTasks(defaultTasks);
         } else {
-          // Toggle parent task
-          if (task.id === taskId) {
-            const newCompleted = !task.completed;
-            return {
-              ...task,
-              completed: newCompleted,
-              subtasks: task.subtasks.map((st) => ({
-                ...st,
-                completed: newCompleted,
-              })),
-            };
-          }
-          return task;
+          setTasks(savedTasks);
         }
-      });
-    });
+      } catch (error) {
+        console.error('Failed to load tasks:', error);
+        showNotification('Failed to load tasks', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTasks();
+  }, []);
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleAddTask = () => {
+  const saveTasksToDB = async (updatedTasks) => {
+    try {
+      await saveAllTasks(updatedTasks);
+      setTasks(updatedTasks);
+    } catch (error) {
+      console.error('Failed to save tasks:', error);
+      showNotification('Failed to save tasks', 'error');
+    }
+  };
+
+  const handleToggle = async (taskId, parentId = null) => {
+    const updatedTasks = tasks.map((task) => {
+      if (parentId) {
+        // Toggle subtask
+        if (task.id === parentId) {
+          return {
+            ...task,
+            subtasks: task.subtasks.map((st) =>
+              st.id === taskId ? { ...st, completed: !st.completed } : st
+            ),
+          };
+        }
+        return task;
+      } else {
+        // Toggle parent task
+        if (task.id === taskId) {
+          const newCompleted = !task.completed;
+          return {
+            ...task,
+            completed: newCompleted,
+            subtasks: task.subtasks.map((st) => ({
+              ...st,
+              completed: newCompleted,
+            })),
+          };
+        }
+        return task;
+      }
+    });
+    await saveTasksToDB(updatedTasks);
+  };
+
+  const handleAddTask = async () => {
     if (taskTitle.trim()) {
       const newTask = {
         id: Date.now().toString(),
@@ -108,9 +125,11 @@ function TaskDashboard() {
         completed: false,
         subtasks: [],
       };
-      setTasks([...tasks, newTask]);
+      const updatedTasks = [...tasks, newTask];
+      await saveTasksToDB(updatedTasks);
       setTaskTitle('');
       setAddTaskModalOpened(false);
+      showNotification('Task added successfully');
     }
   };
 
@@ -123,74 +142,133 @@ function TaskDashboard() {
     }
   };
 
-  const handleSaveEditTask = () => {
+  const handleSaveEditTask = async () => {
     if (taskTitle.trim() && editingTaskId) {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) =>
-          task.id === editingTaskId ? { ...task, title: taskTitle.trim() } : task
-        )
+      const updatedTasks = tasks.map((task) =>
+        task.id === editingTaskId ? { ...task, title: taskTitle.trim() } : task
       );
+      await saveTasksToDB(updatedTasks);
       setTaskTitle('');
       setEditingTaskId(null);
       setEditTaskModalOpened(false);
+      showNotification('Task updated successfully');
     }
   };
 
-  const handleAddSubtask = (parentId, subtaskTitle) => {
+  const handleAddSubtask = async (parentId, subtaskTitle) => {
     if (subtaskTitle.trim()) {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) => {
-          if (task.id === parentId) {
-            const newSubtask = {
-              id: `${parentId}-${Date.now()}`,
-              title: subtaskTitle.trim(),
-              completed: false,
-            };
-            return {
-              ...task,
-              subtasks: [...(task.subtasks || []), newSubtask],
-            };
-          }
-          return task;
-        })
-      );
-    }
-  };
-
-  const handleEditSubtask = (parentId, subtaskId, newTitle) => {
-    if (newTitle.trim()) {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) => {
-          if (task.id === parentId) {
-            return {
-              ...task,
-              subtasks: task.subtasks.map((st) =>
-                st.id === subtaskId ? { ...st, title: newTitle.trim() } : st
-              ),
-            };
-          }
-          return task;
-        })
-      );
-    }
-  };
-
-  const handleDeleteTask = (taskId) => {
-    setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
-  };
-
-  const handleDeleteSubtask = (parentId, subtaskId) => {
-    setTasks((prevTasks) =>
-      prevTasks.map((task) => {
+      const updatedTasks = tasks.map((task) => {
         if (task.id === parentId) {
+          const newSubtask = {
+            id: `${parentId}-${Date.now()}`,
+            title: subtaskTitle.trim(),
+            completed: false,
+          };
           return {
             ...task,
-            subtasks: task.subtasks.filter((st) => st.id !== subtaskId),
+            subtasks: [...(task.subtasks || []), newSubtask],
           };
         }
         return task;
-      })
-    );
+      });
+      await saveTasksToDB(updatedTasks);
+    }
+  };
+
+  const handleEditSubtask = async (parentId, subtaskId, newTitle) => {
+    if (newTitle.trim()) {
+      const updatedTasks = tasks.map((task) => {
+        if (task.id === parentId) {
+          return {
+            ...task,
+            subtasks: task.subtasks.map((st) =>
+              st.id === subtaskId ? { ...st, title: newTitle.trim() } : st
+            ),
+          };
+        }
+        return task;
+      });
+      await saveTasksToDB(updatedTasks);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    const updatedTasks = tasks.filter((task) => task.id !== taskId);
+    await saveTasksToDB(updatedTasks);
+    showNotification('Task deleted successfully');
+  };
+
+  const handleDeleteSubtask = async (parentId, subtaskId) => {
+    const updatedTasks = tasks.map((task) => {
+      if (task.id === parentId) {
+        return {
+          ...task,
+          subtasks: task.subtasks.filter((st) => st.id !== subtaskId),
+        };
+      }
+      return task;
+    });
+    await saveTasksToDB(updatedTasks);
+  };
+
+  const handleExport = () => {
+    const dataStr = JSON.stringify(tasks, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tasks-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showNotification('Tasks exported successfully');
+  };
+
+  const handleImport = async () => {
+    try {
+      let importedTasks;
+      if (importData.trim()) {
+        // Import from textarea
+        importedTasks = JSON.parse(importData);
+      } else {
+        return;
+      }
+
+      // Validate the imported data
+      if (!Array.isArray(importedTasks)) {
+        showNotification('Invalid data format', 'error');
+        return;
+      }
+
+      await saveAllTasks(importedTasks);
+      setTasks(importedTasks);
+      setImportData('');
+      setImportModalOpened(false);
+      showNotification('Tasks imported successfully');
+    } catch (error) {
+      console.error('Import error:', error);
+      showNotification('Failed to import tasks. Please check the format.', 'error');
+    }
+  };
+
+  const handleFileImport = async (file) => {
+    try {
+      const text = await file.text();
+      const importedTasks = JSON.parse(text);
+
+      if (!Array.isArray(importedTasks)) {
+        showNotification('Invalid data format', 'error');
+        return;
+      }
+
+      await saveAllTasks(importedTasks);
+      setTasks(importedTasks);
+      showNotification('Tasks imported successfully');
+    } catch (error) {
+      console.error('Import error:', error);
+      showNotification('Failed to import tasks. Please check the file format.', 'error');
+    }
   };
 
   const getTaskProgress = (task) => {
@@ -220,23 +298,62 @@ function TaskDashboard() {
               Track your progress and level up your productivity
             </Text>
           </div>
-          <Button
-            leftSection={<IconPlus size={18} />}
-            onClick={() => {
-              setTaskTitle('');
-              setAddTaskModalOpened(true);
-            }}
-            size="md"
-            style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            }}
-          >
-            Add Task
-          </Button>
+          <Group gap="sm">
+            <FileButton onChange={handleFileImport} accept="application/json">
+              {(props) => (
+                <Button
+                  {...props}
+                  leftSection={<IconUpload size={18} />}
+                  variant="light"
+                  size="md"
+                >
+                  Import File
+                </Button>
+              )}
+            </FileButton>
+            <Button
+              leftSection={<IconUpload size={18} />}
+              onClick={() => setImportModalOpened(true)}
+              variant="light"
+              size="md"
+            >
+              Import JSON
+            </Button>
+            <Button
+              leftSection={<IconDownload size={18} />}
+              onClick={handleExport}
+              variant="light"
+              size="md"
+            >
+              Export
+            </Button>
+            <Button
+              leftSection={<IconPlus size={18} />}
+              onClick={() => {
+                setTaskTitle('');
+                setAddTaskModalOpened(true);
+              }}
+              size="md"
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              }}
+            >
+              Add Task
+            </Button>
+          </Group>
         </Group>
 
-        <Stack gap="lg">
-          {tasks.map((task, index) => {
+        {loading ? (
+          <Text c="gray.4" ta="center" size="lg">
+            Loading tasks...
+          </Text>
+        ) : tasks.length === 0 ? (
+          <Text c="gray.4" ta="center" size="lg">
+            No tasks yet. Add your first task to get started!
+          </Text>
+        ) : (
+          <Stack gap="lg">
+            {tasks.map((task, index) => {
             const progress = getTaskProgress(task);
             const taskColor = TASK_COLORS[index % TASK_COLORS.length];
             const completedSubtasks = task.subtasks?.filter((st) => st.completed).length || 0;
@@ -294,9 +411,46 @@ function TaskDashboard() {
                 </Grid>
               </Paper>
             );
-          })}
-        </Stack>
+            })}
+          </Stack>
+        )}
       </Stack>
+
+      {notification && (
+        <Paper
+          p="md"
+          style={{
+            position: 'fixed',
+            top: 20,
+            right: 20,
+            zIndex: 1000,
+            background: notification.type === 'error'
+              ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+              : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            minWidth: 300,
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+          }}
+        >
+          <Group gap="sm" justify="space-between">
+            <Group gap="xs">
+              <IconCheck size={18} color="white" />
+              <Text c="white" fw={500} size="sm">
+                {notification.message}
+              </Text>
+            </Group>
+            <ActionIcon
+              variant="subtle"
+              color="white"
+              onClick={() => setNotification(null)}
+              size="sm"
+              style={{ color: 'white' }}
+            >
+              <IconX size={16} />
+            </ActionIcon>
+          </Group>
+        </Paper>
+      )}
 
       {/* Add Task Modal */}
       <Modal
@@ -421,6 +575,69 @@ function TaskDashboard() {
               }}
             >
               Save Changes
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Import Modal */}
+      <Modal
+        opened={importModalOpened}
+        onClose={() => {
+          setImportModalOpened(false);
+          setImportData('');
+        }}
+        title="Import Tasks"
+        centered
+        size="lg"
+        styles={{
+          content: {
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+          },
+          header: {
+            background: 'transparent',
+          },
+          title: {
+            color: 'white',
+          },
+        }}
+      >
+        <Stack gap="md">
+          <Text c="gray.4" size="sm">
+            Paste your JSON data below or use the Import button to select a file
+          </Text>
+          <Textarea
+            placeholder='Paste JSON data here, e.g., [{"id":"1","title":"Task 1","completed":false,"subtasks":[]}]'
+            value={importData}
+            onChange={(e) => setImportData(e.target.value)}
+            minRows={8}
+            styles={{
+              input: {
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                fontFamily: 'monospace',
+              },
+            }}
+          />
+          <Group justify="flex-end">
+            <Button
+              variant="light"
+              onClick={() => {
+                setImportModalOpened(false);
+                setImportData('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              }}
+            >
+              Import
             </Button>
           </Group>
         </Stack>
