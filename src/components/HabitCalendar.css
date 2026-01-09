@@ -1,0 +1,143 @@
+.habit-calendar {
+  max-width: 800px;
+  width: 100%;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.habit-calendar h2 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.calendar-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.habit-select {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  color: white;
+  min-width: 200px;
+}
+
+.calendar-streak {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 165, 0, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 165, 0, 0.3);
+}
+
+.streak-count {
+  font-weight: 700;
+  color: #ffa500;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.month-nav button {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.month-nav button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.calendar-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.col {
+  flex-grow: 1;
+  flex-basis: 0;
+  max-width: 100%;
+  aspect-ratio: 1; /* Make cells square */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+}
+
+.col-center {
+  justify-content: center;
+  align-items: center;
+  font-weight: 600;
+  padding: 0.5rem 0;
+  aspect-ratio: auto;
+  border: none;
+}
+
+.cell {
+  transition: all 0.2s;
+}
+
+.cell.disabled {
+  color: rgba(255, 255, 255, 0.2);
+  background: rgba(0,0,0,0.1);
+}
+
+.cell.today {
+  border-color: #646cff;
+  background: rgba(100, 108, 255, 0.05);
+}
+
+.cell.completed {
+  background: rgba(100, 108, 255, 0.6);
+  color: white;
+  border-color: #646cff;
+}
+
+/* Dot removed */
+.dot {
+  display: none;
+}
+
+.number {
+  font-size: 0.9rem;
+}
