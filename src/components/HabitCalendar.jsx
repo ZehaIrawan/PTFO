@@ -17,7 +17,7 @@ import { useHabits } from '../hooks/useHabits';
 import './HabitCalendar.css';
 
 const HabitCalendar = () => {
-  const { habits, isDueCompleted, getStreak } = useHabits();
+  const { habits, isDueCompleted, getStreak, toggleHabit } = useHabits();
   const [selectedHabitId, setSelectedHabitId] = useState(habits.length > 0 ? habits[0].id : '');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -60,7 +60,7 @@ const HabitCalendar = () => {
     while (day <= endDate) {
       for (let i = 0; i < 7; i++) {
         formattedDate = format(day, dateFormat);
-        const cloneDay = day;
+        const cloneDay = new Date(day);
         const isCompleted = checkIsCompleted(cloneDay);
 
         days.push(
@@ -73,6 +73,11 @@ const HabitCalendar = () => {
                 : ""
             } ${isToday(day) ? "today" : ""} ${isCompleted ? "completed" : ""}`}
             key={day}
+            onClick={() => {
+                if (!isSameMonth(cloneDay, monthStart)) return; // Optional: disable clicking outside month
+                toggleHabit(selectedHabit.id, cloneDay);
+            }}
+            style={{ cursor: 'pointer' }}
           >
             <span className="number">{formattedDate}</span>
           </div>

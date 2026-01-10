@@ -40,27 +40,30 @@ export const useHabits = () => {
     setHabits((prev) => prev.filter((h) => h.id !== id));
   };
 
-  const toggleHabit = (id) => {
-    const today = new Date().toISOString();
+  const toggleHabit = (id, date = new Date()) => {
+    // Ensure we work with a date object
+    const targetDate = typeof date === 'string' ? parseISO(date) : date;
+    const targetDateISO = targetDate.toISOString();
+
     setHabits((prev) =>
       prev.map((habit) => {
         if (habit.id !== id) return habit;
 
-        const isCompletedToday = isDueCompleted(habit);
+        // Check if completed for the target date's period
+        const check = getPeriodCheck(habit.frequency);
+        const isCompletedForTarget = habit.completedDates.some((dateStr) =>
+            check(parseISO(dateStr), targetDate)
+        );
 
-        // If already completed for the current period, remove the completion (toggle off)
-        // Note: This simple toggle logic removes the most recent relevant completion.
-        // For daily it removes "today". For weekly, it removes the completion that satisfied "this week".
-        if (isCompletedToday) {
-          // Find the completion that satisfies the current period and remove it
-          const periodCheck = getPeriodCheck(habit.frequency);
+        if (isCompletedForTarget) {
+          // Find the completion that satisfies the target period and remove it
           const newCompletedDates = habit.completedDates.filter(
-            dateStr => !periodCheck(parseISO(dateStr), new Date())
+            dateStr => !check(parseISO(dateStr), targetDate)
           );
           return { ...habit, completedDates: newCompletedDates };
         } else {
-          // Add today
-          return { ...habit, completedDates: [...habit.completedDates, today] };
+          // Add target date
+          return { ...habit, completedDates: [...habit.completedDates, targetDateISO] };
         }
       })
     );
